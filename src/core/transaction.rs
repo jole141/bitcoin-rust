@@ -1,3 +1,7 @@
+use std::fmt;
+
+use secp256k1::hashes::sha256;
+
 use crate::constants::{COINBASE_VALUE, TX_VERSION};
 use crate::utils::hash::sha256_hash;
 
@@ -36,8 +40,14 @@ impl Transaction {
         }
     }
 
-    pub fn hash(&self) -> String {
-        sha256_hash(format!("{:?}", self))
+    pub fn hash(&self) -> sha256::Hash {
+        sha256_hash(self.to_string().as_str())
+    }
+}
+
+impl fmt::Display for Transaction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Transaction({:?})", self)
     }
 }
 

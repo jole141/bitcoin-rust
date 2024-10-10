@@ -1,7 +1,10 @@
-use sha2::{Sha256, Digest};
+use core::fmt;
+
+use secp256k1::hashes::sha256;
+use secp256k1::PublicKey;
 
 use crate::core::transaction::Transaction;
-use crate::constants::{MY_PUB_ADDRESS, SOFTWARE_VERSION};
+use crate::constants::SOFTWARE_VERSION;
 use crate::utils::hash::sha256_hash;
 use crate::utils::time::get_current_timestamp_ms;
 
@@ -33,11 +36,8 @@ impl Block {
         }
     }
 
-    pub fn hash_block(&self) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(format!("{:?}", self.header));
-        let result = hasher.finalize();
-        format!("{:x}", result)
+    pub fn hash_block(&self) -> sha256::Hash {
+        sha256_hash(self.header.to_string().as_str())
     }
 }
 
@@ -58,11 +58,16 @@ pub struct BlockHeader {
     pub nonce: u32,
 }
 
+impl fmt::Display for BlockHeader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "BlockHeader({:?})", self)
+    }
+}
+
 /// Calculates the merkle root of a list of transactions
 /// by hashing pairs of transaction hashes until only one hash remains
 pub fn calculate_merkle_root(transactions: &Vec<Transaction>) -> String {
-    let mut hasher = Sha256::new();
-    let mut hashes: Vec<String> = transactions.iter().map(|transaction| transaction.hash()).collect();
+    let mut hashes: Vec<String> = transactions.iter().map(|transaction| transaction.hash().to_string()).collect();
     while hashes.len() > 1 {
         let mut new_hashes: Vec<String> = vec![];
         for i in (0..hashes.len()).step_by(2) {
@@ -72,8 +77,8 @@ pub fn calculate_merkle_root(transactions: &Vec<Transaction>) -> String {
             } else {
                 &hashes[i]
             };
-            hasher.update(format!("{}{}", left, right));
-            new_hashes.push(format!("{:x}", hasher.clone().finalize()));
+            let new_hash = sha256_hash(format!("{}{}", left, right).as_str());
+            new_hashes.push(new_hash.to_string());
         }
         hashes.clear();
         hashes.extend(new_hashes);
@@ -87,7 +92,7 @@ pub fn calculate_merkle_root(transactions: &Vec<Transaction>) -> String {
 /// and if the difficulty target of the block is correct
 /// and if each transaction in the block is valid
 pub fn validate_block(block: &Block) -> bool {
-    let block_hash = sha256_hash(format!("{:?}", block.header));
+    let block_hash = sha256_hash(block.header.to_string().as_str());
     let transactions = &block.transactions;
     let merkle_root = calculate_merkle_root(transactions);
     if block.hash_block() != block_hash {
@@ -110,10 +115,9 @@ pub fn validate_block(block: &Block) -> bool {
 
 
 /// Initializes the genesis block
-pub fn init_genesis_block() -> Block {
-    let script_pub_key = MY_PUB_ADDRESS.to_string();
-    let recipient_pub_key = MY_PUB_ADDRESS.to_string();
-    let coinbase_transaction = Transaction::new_coinbase_transaction(script_pub_key, recipient_pub_key);
+pub fn init_genesis_block(miner_pub_key: PublicKey) -> Block {
+    let script_pub_key = miner_pub_key.to_string();
+    let coinbase_transaction = Transaction::new_coinbase_transaction(script_pub_key, miner_pub_key.to_string());
     let transactions = vec![coinbase_transaction.clone()];
     let merkle_root = calculate_merkle_root(&transactions);
     let genesis_block = Block::new(
@@ -141,16 +145,15 @@ pub fn validate_blockchain(blockchain: &Vec<Block>) -> bool {
 }
 
 /// Mines a new block by creating a new block with a coinbase transaction
-pub fn mine_new_block(previous_block_hash: &String, transactions: Vec<Transaction>) -> Block {
-    let script_pub_key = MY_PUB_ADDRESS.to_string();
-    let recipient_pub_key = MY_PUB_ADDRESS.to_string();
-    let coinbase_transaction = Transaction::new_coinbase_transaction(script_pub_key, recipient_pub_key);
+pub fn mine_new_block(miner_pub_key: PublicKey,previous_block_hash: &sha256::Hash, transactions: Vec<Transaction>) -> Block {
+    let script_pub_key = miner_pub_key.to_string();
+    let coinbase_transaction = Transaction::new_coinbase_transaction(script_pub_key, miner_pub_key.to_string());
     let mut all_transactions = vec![coinbase_transaction.clone()];
     all_transactions.extend(transactions);
     let merkle_root = calculate_merkle_root(&all_transactions);
     let new_block = Block::new(
         SOFTWARE_VERSION.to_string(), 
-        Some(previous_block_hash.clone()), 
+        Some(previous_block_hash.to_string()), 
         merkle_root, 
         get_current_timestamp_ms(), 
         0, 

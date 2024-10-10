@@ -2,41 +2,49 @@ mod core;
 mod constants;
 mod utils;
 
-use core::{block::{mine_new_block, validate_blockchain, Block}, transaction::Transaction};
+use rand::Rng;
 
-use constants::AVERAGE_BLOCK_TIME_MS;
+use core::{block::Block, consensus::Node};
+use std::{sync::{mpsc, Arc, Mutex}, time::Duration};
+use constants::{AVERAGE_BLOCK_TIME_MS, NUMBER_OF_NODES};
 
-use crate::core::block::init_genesis_block;
 
 fn main() {
-    println!("Bitcoin in Rust!");
-    let mut blockchain: Vec<Block> = vec![];
-
-    let genesis_block = init_genesis_block();
-    blockchain.push(genesis_block.clone());
-    let mut block_number = 1;
-    println!("#{} block: {}", block_number, genesis_block.hash_block());
-    // simulate mining a new block
-    let mut previous_block_hash = genesis_block.hash_block();
-    loop {
-        // simulate AVERAGE_BLOCK_TIME_MS seconds of mining
-        std::thread::sleep(std::time::Duration::from_millis(AVERAGE_BLOCK_TIME_MS));
-        let new_transactions = get_list_of_transactions();
-        let new_block = mine_new_block(&previous_block_hash, new_transactions);
-        // copy the blockchain and add new block to the copied blockchain
-        let mut new_blockchain = blockchain.clone();
-        new_blockchain.push(new_block.clone());
-        if validate_blockchain(&new_blockchain) {
-            println!("#{} block: {}", block_number+1, new_block.hash_block());
-            previous_block_hash = new_block.hash_block();
-            block_number += 1;
-        } else {
-            println!("Block is invalid!");
-        }
-    }
+    multithreaded_blockchain();
+    
 }
 
-/// Get available transactions to be included in a block
-fn get_list_of_transactions() -> Vec<Transaction> {
-    vec![]
+fn multithreaded_blockchain() {
+    let mut tx_channels = vec![];
+    let mut node_threads = vec![];
+    let tx_rx_channels = Arc::new(Mutex::new(vec![]));
+
+    // Creates channels for syncing blocks between nodes
+    for _  in 0..NUMBER_OF_NODES {
+        let (tx_block, rx_block) = mpsc::channel::<Block>();
+        tx_rx_channels.lock().unwrap().push((tx_block, rx_block));
+        
+    }
+
+    // Creating NUMBER_OF_NODES threads to simulate nodes
+    for id in 0..NUMBER_OF_NODES {
+        // channel for picking random node to mine a block
+        let (tx, rx) = mpsc::channel::<u32>();
+        // clone tx_rx_channels to be used in the thread
+        let tx_rx_channels_clone = Arc::clone(&tx_rx_channels);
+        let node = Arc::new(Node::new(id));
+        let thread = node.start_node(rx, tx_rx_channels_clone);
+        node_threads.push(thread);
+        tx_channels.push(tx);
+    }
+
+    // Main loop to simulate mining blocks (pick a random node to mine a block)
+    loop { 
+        let random_node_id: u32 = rand::thread_rng().gen_range(0..NUMBER_OF_NODES);
+        println!("KBV picked a random node id: {}", random_node_id);
+        let choosen_tx = &tx_channels[random_node_id as usize];
+        choosen_tx.send(random_node_id).unwrap();
+        std::thread::sleep(Duration::from_millis(AVERAGE_BLOCK_TIME_MS));
+        println!("------------------------------------");
+    }
 }

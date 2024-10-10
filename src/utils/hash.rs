@@ -1,8 +1,5 @@
-use sha2::{Sha256, Digest};
+use secp256k1::hashes::{sha256, Hash};
 
-pub fn sha256_hash<T: AsRef<[u8]>>(data: T) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let result = hasher.finalize();
-    format!("{:x}", result)
+pub fn sha256_hash(data: &str) -> sha256::Hash {
+    sha256::Hash::hash(data.as_bytes())
 }
