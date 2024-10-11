@@ -1,6 +1,7 @@
 use std::fmt;
 
 use secp256k1::hashes::sha256;
+use secp256k1::PublicKey;
 
 use crate::constants::{COINBASE_VALUE, TX_VERSION};
 use crate::utils::hash::sha256_hash;
@@ -22,7 +23,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn new_coinbase_transaction(script_pub_key: String, recipient_pub_key: String) -> Transaction {
+    pub fn new_coinbase_transaction(script_pub_key: String, recipient_pub_key: PublicKey) -> Transaction {
         Transaction {
             transaction_version: TX_VERSION,
             input_count: 0,
@@ -76,5 +77,28 @@ pub struct TransactionOutput {
     pub script_pub_key: String,
     /// The address of the recipient (public key hash)
     /// used to make the transaction more human-readable
-    pub recipient_pub_key: String,
+    pub recipient_pub_key: PublicKey,
+}
+
+
+/// Calculates the merkle root of a list of transactions
+/// by hashing pairs of transaction hashes until only one hash remains
+pub fn calculate_merkle_root(transactions: &Vec<Transaction>) -> String {
+    let mut hashes: Vec<String> = transactions.iter().map(|transaction| transaction.hash().to_string()).collect();
+    while hashes.len() > 1 {
+        let mut new_hashes: Vec<String> = vec![];
+        for i in (0..hashes.len()).step_by(2) {
+            let left = &hashes[i];
+            let right = if i + 1 < hashes.len() {
+                &hashes[i + 1]
+            } else {
+                &hashes[i]
+            };
+            let new_hash = sha256_hash(format!("{}{}", left, right).as_str());
+            new_hashes.push(new_hash.to_string());
+        }
+        hashes.clear();
+        hashes.extend(new_hashes);
+    }
+    hashes[0].clone()
 }

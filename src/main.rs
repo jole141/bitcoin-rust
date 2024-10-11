@@ -41,7 +41,7 @@ fn multithreaded_blockchain() {
     // Main loop to simulate mining blocks (pick a random node to mine a block)
     loop { 
         let random_node_id: u32 = rand::thread_rng().gen_range(0..NUMBER_OF_NODES);
-        println!("KBV picked a random node id: {}", random_node_id);
+        println!("MAIN THREAD picked a random node id: {}", random_node_id);
         let choosen_tx = &tx_channels[random_node_id as usize];
         choosen_tx.send(random_node_id).unwrap();
         std::thread::sleep(Duration::from_millis(AVERAGE_BLOCK_TIME_MS));
