@@ -83,10 +83,10 @@ pub struct TransactionOutput {
 
 /// Calculates the merkle root of a list of transactions
 /// by hashing pairs of transaction hashes until only one hash remains
-pub fn calculate_merkle_root(transactions: &Vec<Transaction>) -> String {
-    let mut hashes: Vec<String> = transactions.iter().map(|transaction| transaction.hash().to_string()).collect();
+pub fn calculate_merkle_root(transactions: &Vec<Transaction>) -> sha256::Hash {
+    let mut hashes: Vec<sha256::Hash> = transactions.iter().map(|transaction| transaction.hash()).collect();
     while hashes.len() > 1 {
-        let mut new_hashes: Vec<String> = vec![];
+        let mut new_hashes: Vec<sha256::Hash> = vec![];
         for i in (0..hashes.len()).step_by(2) {
             let left = &hashes[i];
             let right = if i + 1 < hashes.len() {
@@ -95,10 +95,70 @@ pub fn calculate_merkle_root(transactions: &Vec<Transaction>) -> String {
                 &hashes[i]
             };
             let new_hash = sha256_hash(format!("{}{}", left, right).as_str());
-            new_hashes.push(new_hash.to_string());
+            new_hashes.push(new_hash);
         }
         hashes.clear();
         hashes.extend(new_hashes);
     }
-    hashes[0].clone()
+    hashes[0]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secp256k1::hashes::Hash;
+    use secp256k1::Secp256k1;
+    use secp256k1::rand::rngs::OsRng;
+
+    fn generate_public_key() -> PublicKey {
+        let secp = Secp256k1::new();
+        let (_, public_key) = secp.generate_keypair(&mut OsRng);
+        public_key
+    }
+
+    #[test]
+    fn test_new_coinbase_transaction() {
+        let pub_key = generate_public_key();
+        let script_pub_key = "76a914...88ac".to_string(); // Pseudo scriptPubKey
+
+        let tx = Transaction::new_coinbase_transaction(script_pub_key.clone(), pub_key.clone());
+
+        assert_eq!(tx.transaction_version, TX_VERSION);
+        assert_eq!(tx.input_count, 0);
+        assert_eq!(tx.inputs.len(), 0);
+        assert_eq!(tx.output_count, 1);
+        assert_eq!(tx.outputs.len(), 1);
+        assert_eq!(tx.outputs[0].value, COINBASE_VALUE);
+        assert_eq!(tx.outputs[0].script_pub_key, script_pub_key);
+        assert_eq!(tx.outputs[0].recipient_pub_key, pub_key);
+    }
+
+    #[test]
+    fn test_transaction_hash() {
+        let pub_key = generate_public_key();
+        let script_pub_key = "76a914...88ac".to_string();
+
+        let tx = Transaction::new_coinbase_transaction(script_pub_key, pub_key);
+
+        // check if the hash is 32 bytes long
+        let hash = tx.hash();
+        assert_eq!(hash.to_byte_array().len(), 32);  // 32 bytes
+    }
+
+    #[test]
+    fn test_calculate_merkle_root() {
+        let pub_key = generate_public_key();
+        let script_pub_key = "76a914...88ac".to_string();
+
+        // create 3 coinbase transactions
+        let tx1 = Transaction::new_coinbase_transaction(script_pub_key.clone(), pub_key.clone());
+        let tx2 = Transaction::new_coinbase_transaction(script_pub_key.clone(), pub_key.clone());
+        let tx3 = Transaction::new_coinbase_transaction(script_pub_key.clone(), pub_key.clone());
+
+        let transactions = vec![tx1, tx2, tx3];
+        let merkle_root = calculate_merkle_root(&transactions);
+
+        // check if the merkle root is 32 bytes long
+        assert_eq!(merkle_root.as_byte_array().len(), 32);  // 64 hex characters = 32 bytes
+    }
 }

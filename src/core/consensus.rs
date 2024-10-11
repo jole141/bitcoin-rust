@@ -46,7 +46,7 @@ impl Node {
                     } else {
                         let previous_block_hash = blockchain.last().unwrap().hash_block();
                         let new_transactions = get_list_of_transactions();
-                        let new_block = Self::mine_new_block(self.pub_key, &previous_block_hash, new_transactions);
+                        let new_block = Self::mine_new_block(self.pub_key, previous_block_hash, new_transactions);
                         blockchain.push(new_block.clone());
                         println!("#{} block ({}) -> mined by #{} node (pubKey: {})", blockchain.len(), new_block.hash_block(), self.id, self.pub_key);
                     }
@@ -100,7 +100,7 @@ impl Node {
     }
 
     /// Mines a new block by creating a new block with a coinbase transaction
-    pub fn mine_new_block(miner_pub_key: PublicKey,previous_block_hash: &sha256::Hash, transactions: Vec<Transaction>) -> Block{
+    pub fn mine_new_block(miner_pub_key: PublicKey, previous_block_hash: sha256::Hash, transactions: Vec<Transaction>) -> Block{
         let script_pub_key = miner_pub_key.to_string();
         let coinbase_transaction = Transaction::new_coinbase_transaction(script_pub_key, miner_pub_key);       
         let mut all_transactions = vec![coinbase_transaction.clone()];
@@ -108,7 +108,7 @@ impl Node {
         let merkle_root = calculate_merkle_root(&all_transactions);
         let new_block = Block::new(
             SOFTWARE_VERSION.to_string(), 
-            Some(previous_block_hash.to_string()), 
+            Some(previous_block_hash), 
             merkle_root, 
             get_current_timestamp_ms(), 
             0, 
@@ -163,4 +163,70 @@ impl Node {
 /// Temporary function to return an empty list of transactions
 fn get_list_of_transactions() -> Vec<Transaction> {
     vec![]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secp256k1::{hashes::Hash, Secp256k1};
+    use secp256k1::rand::rngs::OsRng;
+    use std::sync::{Arc, Mutex};
+
+    fn generate_public_key() -> PublicKey {
+        let secp = Secp256k1::new();
+        let (_, public_key) = secp.generate_keypair(&mut OsRng);
+        public_key
+    }
+
+    #[test]
+    fn test_node_initialization() {
+        let node = Node::new(1);
+        assert_eq!(node.id, 1);
+        // blockchain should be empty
+        assert!(node.blockchain.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_genesis_block_creation() {
+        let pub_key = generate_public_key();
+        let genesis_block = Node::init_genesis_block(pub_key.clone());
+
+        assert_eq!(genesis_block.transactions.len(), 1);
+        assert_eq!(genesis_block.header.previous_block_hash, None);
+        assert_eq!(genesis_block.header.merkle_root.as_byte_array().len(), 32);
+    }
+
+    #[test]
+    fn test_mine_new_block() {
+        let pub_key = generate_public_key();
+        let previous_block_hash = sha256_hash("dummy_previous_block_hash");
+        let transactions = vec![];
+
+        let new_block = Node::mine_new_block(pub_key.clone(), previous_block_hash.clone(), transactions.clone());
+
+        assert_eq!(new_block.transactions.len(), 1);
+        assert_eq!(new_block.header.previous_block_hash.unwrap(), previous_block_hash);
+    }
+
+    #[test]
+    fn test_block_validation() {
+        let pub_key = generate_public_key();
+        let genesis_block = Node::init_genesis_block(pub_key.clone());
+
+        let is_valid = Node::validate_block(&genesis_block);
+        assert!(is_valid);
+    }
+
+    #[test]
+    fn test_blockchain_validation() {
+        let pub_key = generate_public_key();
+        let genesis_block = Node::init_genesis_block(pub_key.clone());
+        let mut blockchain = vec![genesis_block.clone()];
+
+        let new_block = Node::mine_new_block(pub_key.clone(), genesis_block.hash_block(), vec![]);
+        blockchain.push(new_block);
+
+        let is_valid = Node::validate_blockchain(&blockchain);
+        assert!(is_valid);
+    }
 }
